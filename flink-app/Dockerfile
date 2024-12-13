@@ -1,39 +1,29 @@
-FROM flink:1.17.0
+# Build stage
+FROM maven:3.8.4-openjdk-11 AS builder
 
-WORKDIR /opt/flink/app
+# Set working directory
+WORKDIR /build
 
-# Install Python and dependencies
-RUN apt-get update && \
-    apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-dev \
-    openjdk-11-jdk \
-    wget && \
-    # Create symlink for python to python3
-    ln -sf /usr/bin/python3 /usr/bin/python && \
-    # Clean up apt cache
-    rm -rf /var/lib/apt/lists/*
+# Copy the POM file
+COPY pom.xml .
 
-# Create symlink for Java includes
-RUN mkdir -p /opt/java/openjdk/include && \
-    ln -s /usr/lib/jvm/java-11-openjdk-arm64/include/* /opt/java/openjdk/include/
+# Copy source code
+COPY src ./src/
 
-# Download required JARs
-RUN wget -P /opt/flink/app/lib/ https://repo.maven.apache.org/maven2/org/apache/flink/flink-connector-kafka/1.17.0/flink-connector-kafka-1.17.0.jar && \
-    wget -P /opt/flink/app/lib/ https://repo.maven.apache.org/maven2/org/apache/kafka/kafka-clients/3.2.3/kafka-clients-3.2.3.jar && \
-    wget -P /opt/flink/app/lib/ https://repo.maven.apache.org/maven2/org/apache/flink/flink-connector-jdbc/3.1.0-1.17/flink-connector-jdbc-3.1.0-1.17.jar && \
-    wget -P /opt/flink/app/lib/ https://jdbc.postgresql.org/download/postgresql-42.6.0.jar
+# Build the application
+RUN mvn clean package
 
-# Set Python environment variables
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH "${PYTHONPATH}:/opt/flink/app"
-ENV PYTHON_HOME "/usr/bin/python3"
+# Runtime stage
+FROM flink:1.17.0-java11
 
-COPY requirements.txt .
-RUN pip3 install -r requirements.txt
+# Copy the built artifact from builder stage
+COPY --from=builder /build/target/flink-emissions-processor-1.0-SNAPSHOT.jar /opt/flink/usrlib/flink-emissions-processor.jar
 
-# Copy your application
-COPY . .
+# Add any additional configuration if needed
+COPY log4j.properties /opt/flink/conf/
 
-CMD ["python3", "app.py"]
+# Set environment variables
+ENV FLINK_PROPERTIES="jobmanager.rpc.address: flink-jobmanager"
+
+# Command to run the application
+CMD ["standalone-job", "--job-classname", "com.example.FlinkEmissionsProcessor", "--jar", "/opt/flink/usrlib/flink-emissions-processor.jar"]

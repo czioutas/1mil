@@ -23,8 +23,9 @@ model Emission {
   Organization  Organization @relation(fields: [organizationId], references: [id])
 }
 
+/// @PostgreSQL(partitioned: true, partitionKey: organizationId)
 model AggregatedEmission {
-  organizationId Int
+  organizationId  Int
   month          String
   totalEmissions Float
 
