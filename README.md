@@ -89,6 +89,18 @@ docker-compose logs -f flink-app
 docker-compose restart app
 ```
 
+### App
+
+```
+# Run migrations
+docker exec app npx prisma migrate dev
+```
+
+```
+# Seed data
+docker exec app npx prisma db seed
+```
+
 ### Kafka Commands
 ```bash
 # Create topic
