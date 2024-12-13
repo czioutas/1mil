@@ -1,0 +1,32 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          Int      @id @default(autoincrement())
+  name        String
+  createdAt   DateTime @default(now())
+  Emissions   Emission[]
+}
+
+model Emission {
+  id            Int      @id @default(autoincrement())
+  organizationId Int
+  timestamp     DateTime @default(now())
+  value         Float
+
+  Organization  Organization @relation(fields: [organizationId], references: [id])
+}
+
+model AggregatedEmission {
+  organizationId Int
+  month          String
+  totalEmissions Float
+
+  @@id([organizationId, month])
+}

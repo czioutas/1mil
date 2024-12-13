@@ -1,0 +1,106 @@
+version: '3.9'
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+    volumes:
+      - ./kafka/kafka-init.sh:/etc/kafka/kafka-init.sh
+    # command: ["/bin/sh", "-c", "/etc/kafka/kafka-init.sh && /etc/confluent/docker/run"]
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "kafka:9092"]
+      interval: 30s
+      retries: 3
+      start_period: 60s
+      timeout: 20s    
+
+  flink-jobmanager:
+    image: flink:1.17.0
+    container_name: flink-jobmanager
+    depends_on:
+      - kafka
+    ports:
+      - "8081:8081"
+      - "6123:6123"
+    command: jobmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        jobmanager.memory.process.size: 1600m
+        taskmanager.memory.process.size: 1728m
+        parallelism.default: 2
+        jobmanager.host=flink-jobmanager
+
+  flink-taskmanager:
+    image: flink:1.17.0
+    container_name: flink-taskmanager
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.port: 6123
+        taskmanager.numberOfTaskSlots: 2
+        taskmanager.memory.process.size: 1728m
+    scale: 1
+
+  flink-app:
+    build:
+      context: ./flink-app
+    container_name: flink-app
+    depends_on:
+      - kafka
+      - postgres
+      - flink-jobmanager  
+    environment:
+      - FLINK_JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
+      - PYTHONPATH=/app
+      - jobmanager.rpc.address=flink-jobmanager
+    command: ["python3", "app.py"]  
+    restart: unless-stopped  
+
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+    ports:
+      - "5434:5432"
+
+  app:
+    build:
+      context: ./app
+    container_name: app
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://demo:demo@postgres:5432/demo
+      KAFKA_BROKER: kafka:9092
+    volumes:
+      - ./app:/usr/src/app      
+    depends_on:
+      - kafka
+      - postgres
